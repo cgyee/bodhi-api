@@ -1,19 +1,23 @@
 import express from "express";
-import { missingFields, validateJob } from "../utils";
-import { find, Job, remove, update } from "../db";
+import { validateJob } from "../utils";
+import { findAll, find, Job, remove, update } from "../db";
 const router = express.Router();
 
 router.get("/jobs", async (req, res, next) => {
-  const job = <Job>req.body;
-
   // check cache
   // if not in cache, check db
-  let [j, ok] = find(job.eventName);
-  if (!ok) {
-    res.status(404).send("Job not found");
-  }
-  res.status(200).send(j);
+  let j = findAll();
+
+  const jobs = j.map((job) => ({
+    ...job,
+    lastRun: null,
+    nextRun: null,
+    runTimes: null,
+  }));
+
+  res.status(200).send(j<Job[]>);
 });
+
 router.post("/jobs", async (req, res, next) => {
   const job = <Job>req.body;
   const [result, valid] = validateJob(
@@ -32,6 +36,7 @@ router.post("/jobs", async (req, res, next) => {
   }
   res.status(201).send(j);
 });
+
 router.put("/jobs/:id", async (req, res, next) => {
   const id = req.params.id;
   const job = <Job>req.body;
@@ -57,6 +62,7 @@ router.put("/jobs/:id", async (req, res, next) => {
   }
   res.status(204).send("Job updated");
 });
+
 router.delete("/jobs:id", async (req, res, next) => {
   const id = req.params.id;
   // check cache
