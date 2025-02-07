@@ -61,7 +61,7 @@ const create = (job: Job) => {
   return [null, true];
 };
 
-const update = (job: Job) => [Error | null, Boolean] => {
+const update = (job: Job): [unknown | null, boolean] => {
   database.open();
   const query = `UPDATE jobs SET startDate = ${job.startDate}, endDate = ${job.endDate}, interval = ${job.recurrence.interval}, frequency = ${job.recurrence.frequency}, eventName = ${job.eventName} WHERE id = ${job.id}`;
   const commit = database.prepare(query);
@@ -73,10 +73,10 @@ const update = (job: Job) => [Error | null, Boolean] => {
     return [error, false];
   }
   database.close();
-  return [job, true];
+  return [null, true];
 };
 
-const remove = (key: string) => {
+const remove = (key: string): [unknown | null, boolean] => {
   database.open();
   const query = `DELETE FROM jobs WHERE id = ${key}`;
   const commit = database.prepare(query);

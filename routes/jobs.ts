@@ -1,6 +1,6 @@
 import express from "express";
 import { missingFields, validateJob } from "../utils";
-import { find, Job, update } from "../db";
+import { find, Job, remove, update } from "../db";
 const router = express.Router();
 
 router.get("/jobs", async (req, res, next) => {
@@ -45,35 +45,33 @@ router.put("/jobs/:id", async (req, res, next) => {
   }
   // check cache
   // if not in cache, check db
-  let [j, ok] = find(job.id);
+  let [_, ok] = find(job.id);
   if (!ok) {
     res.status(404).send("Job not found");
   }
   // update db
-  update(job);
+  const [err, status] = update(job);
+  if (!status) {
+    console.log(err);
+    res.status(500).send("Internal server error");
+  }
+  res.status(204).send("Job updated");
 });
 router.delete("/jobs:id", async (req, res, next) => {
   const id = req.params.id;
   // check cache
   // if not in cache, check db
+  const [_, ok] = find(id);
+  if (!ok) {
+    res.status(404).send("Job not found");
+  }
   // if in db proceed to process job data
-  const job = <Job>req.body;
-  const [missedProps, missing] = missingFields(job);
-  if (missing) {
-    res.status(400).send(`Missing fields: ${missedProps.join(", ")}`);
+  const [err, status] = remove(id);
+  if (!status) {
+    console.log(err);
+    res.status(500).send(`Internal server error: ${err}`);
   }
-  // updata db
+  res.status(204).send("Job deleted");
 });
-
-const dataParser = (dateStr: string): Date | null => {
-  let date: Date;
-  try {
-    date = new Date(dateStr);
-  } catch (error) {
-    console.log(error);
-    return null;
-  }
-  return date;
-};
 
 export default router;
