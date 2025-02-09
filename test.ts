@@ -1,4 +1,4 @@
-import db, { Job } from "./db";
+import db, { type Job } from "./db.ts";
 import { describe, it, expect } from "@jest/globals";
 
 const staticData = {

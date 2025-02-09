@@ -9,6 +9,9 @@ export interface Job {
     interval: number;
     frequency: string;
   };
+  lastRun?: string;
+  nextRun?: string;
+  runTimes?: number;
 }
 
 interface params {
@@ -131,8 +134,8 @@ const update = async (p: params, j: Job): Promise<Boolean> => {
   const { collection, close } = conn;
   let ok = false;
   try {
-    const { eventName } = p;
-    const query = { eventName };
+    const { id } = p;
+    const query = { id };
     const update = { $set: j };
     const options = { upsert: false };
     const job = await collection.updateOne(query, update, options);
