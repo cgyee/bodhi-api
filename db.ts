@@ -1,122 +1,183 @@
-import { DatabaseSync } from "node:sqlite";
-const database = new DatabaseSync("./db.sqlite");
+import "dotenv/config";
+import { MongoClient } from "mongodb";
 export interface Job {
-  id: string;
+  id?: string;
   eventName: string;
-  startDate: Date;
-  endDate: Date;
+  startDate: string;
+  endDate: string;
   recurrence: {
     interval: number;
     frequency: string;
   };
 }
 
-export interface WorkerJob extends Job {
-  lastRun?: Date;
-  nextRun?: Date;
-  runTimes?: number;
-
-  
+interface params {
+  id?: string;
+  eventName: string;
 }
-const findAll = (): WorkerJob[] => {
-  database.open();
-  const query = "SELECT * FROM jobs";
-  const result = database.prepare(query);
-  const jobs: WorkerJob[] = result.all().map((r) => {
-    const job: WorkerJob = {
-      ...r,
-      }
-      job.startDate = new Date(r.startDate);
-      job.endDate = new Date(r.endDate);
-      job.lastRun = r.lastRun ? new Date(r.lastRun) : undefined;
-      job.nextRun = r.nextRun ? new Date(r.nextRun) : undefined;
-    });
-  database.close();
-  return jobs;
+
+interface Database {
+  findAll: () => Promise<Job[]>;
+  findOne: (params: params) => Promise<Job | null>;
+  create: (job: Job) => Promise<Boolean>;
+  createMany?: (jobs: Job[]) => Promise<Boolean>;
+  update: (params: params, job: Job) => Promise<Boolean>;
+  remove: (params: params) => Promise<Boolean>;
+}
+
+const connectToDatabase = async () => {
+  try {
+    const client = new MongoClient(process.env.MONGO_URI as string);
+    await client.connect();
+    console.log("Connected to MongoDB");
+    const db = client.db(process.env.MONGO_DB_NAME);
+    const collection = db.collection(
+      process.env.MONGO_COLLECTION_NAME as string
+    );
+    return { collection, close: client.close.bind(client) };
+  } catch (error) {
+    console.log(error);
+    return null;
+  }
 };
 
-const find = (key: string, token = ""): [Job | null, Boolean] => {
-  database.open();
-  if (key === "") {
-    return [null, false];
+const findAll = async () => {
+  const conn = await connectToDatabase();
+  if (conn == null) {
+    return [];
   }
-  let job : Job;
-  if (token !== "") {
-    const query = `SELECT * FROM jobs WHERE eventName = ${key} AND token = ${token}`;
-    const result = database.prepare(query);
-    const [r, ..._] = result.all();
-    if (!r) {
-      database.close();
-      return [null, false];
+  const { collection, close } = conn;
+  let jobs: Job[] = [];
+  try {
+    if (collection == null) {
+      return [];
     }
-
-    job = {
-      ...r,
-      },
-      job.startDate = new Date(r.startDate);
-      job.endDate = new Date(r.endDate);
-    };
-    database.close();
-    return [job, true];
-  }
-  const query = `SELECT * FROM jobs WHERE id = ${key}`;
-  const result = database.prepare(query);
-  const [r, ..._] = result.all();
-  if (!r) {
-    database.close();
-    return [null, false];
-  }
-  const job: Job = {
-    ...r,
-    },
-  };
-  [job as Job, true];
-  database.close();
-  return [<Job>r, true];
-};
-
-const create = (job: Job) => {
-  database.open();
-  const query = `INSERT INTO jobs (id, eventName, startDate, endDate, interval, frequnecy) VALUES (${job.id}, ${job.eventName}, ${job.startDate}, ${job.endDate}, ${job.recurrence.interval}, ${job.recurrence.frequency})`;
-  const commit = database.prepare(query);
-  try {
-    commit.run();
+    const j = await collection.find().toArray();
+    jobs = j.map((v: any) => {
+      return {
+        eventName: v.eventName,
+        startDate: v.startDate,
+        endDate: v.endDate,
+        recurrence: v.recurrence,
+      } as Job;
+    });
   } catch (error) {
     console.log(error);
-    return [error, false];
+  } finally {
+    close();
+    return jobs;
   }
-  database.close();
-  return [null, true];
 };
 
-const update = (job: Job): [unknown | null, boolean] => {
-  database.open();
-  const query = `UPDATE jobs SET startDate = ${job.startDate}, endDate = ${job.endDate}, interval = ${job.recurrence.interval}, frequency = ${job.recurrence.frequency}, eventName = ${job.eventName} WHERE id = ${job.id}`;
-  const commit = database.prepare(query);
+const findOne = async (p: params) => {
+  const conn = await connectToDatabase();
+  if (conn == null) {
+    return null;
+  }
+  const { collection, close } = conn;
+  let job: Job | null = null;
   try {
-    commit.run();
+    const { eventName } = p;
+    const query = { eventName };
+    const j = await collection.findOne(query);
+
+    if (j && j._id) {
+      job = {
+        eventName: j.eventName,
+        startDate: j.startDate,
+        endDate: j.endDate,
+        recurrence: j.recurrence,
+      };
+    } else {
+      job = null;
+    }
   } catch (error) {
     console.log(error);
-    database.close();
-    return [error, false];
+    return null;
+  } finally {
+    close();
+    return job;
   }
-  database.close();
-  return [null, true];
 };
 
-const remove = (key: string): [unknown | null, boolean] => {
-  database.open();
-  const query = `DELETE FROM jobs WHERE id = ${key}`;
-  const commit = database.prepare(query);
+const create = async (jobs: Job): Promise<Boolean> => {
+  const conn = await connectToDatabase();
+  if (conn == null) {
+    return false;
+  }
+  const { collection, close } = conn;
+  let ok = false;
   try {
-    commit.run();
+    const job = await collection.insertOne(jobs);
+    if (!job.acknowledged) {
+      ok = false;
+    } else {
+      ok = true;
+    }
   } catch (error) {
     console.log(error);
-    return [error, false];
+    ok = false;
+  } finally {
+    close();
+    return ok;
   }
-  database.close();
-  return [null, true];
 };
 
-export { findAll, find, create, update, remove };
-export default database;
+const update = async (p: params, j: Job): Promise<Boolean> => {
+  const conn = await connectToDatabase();
+  if (conn == null) {
+    return false;
+  }
+  const { collection, close } = conn;
+  let ok = false;
+  try {
+    const { eventName } = p;
+    const query = { eventName };
+    const update = { $set: j };
+    const options = { upsert: false };
+    const job = await collection.updateOne(query, update, options);
+    if (job.modifiedCount === 0) {
+      ok = false;
+    }
+    ok = true;
+  } catch (error) {
+    console.log(error);
+    ok = false;
+  } finally {
+    close();
+    return ok;
+  }
+};
+
+const remove = async (p: params) => {
+  const conn = await connectToDatabase();
+  if (conn == null) {
+    return false;
+  }
+  const { collection, close } = conn;
+  let ok = false;
+  try {
+    const { eventName } = p;
+    const query = { eventName };
+    const job = await collection.deleteOne(query);
+    if (job.deletedCount === 0) {
+      ok = false;
+    } else {
+      ok = true;
+    }
+  } catch (error) {
+    console.log(error);
+    ok = false;
+  } finally {
+    close();
+    return ok;
+  }
+};
+const db: Database = {
+  findAll,
+  findOne,
+  create,
+  update,
+  remove,
+};
+export default db;
