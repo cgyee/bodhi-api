@@ -1,83 +1,98 @@
 import express from "express";
-import { validateJob } from "../utils";
-import { findAll, find, Job, remove, update } from "../db";
+import { removeFields, validateJob } from "../utils.ts";
+import db, { type Job } from "../db.ts";
 const router = express.Router();
 
-router.get("/jobs", async (req, res, next) => {
-  // check cache
-  // if not in cache, check db
-  let j = findAll();
-
-  const jobs = j.map((job) => ({
-    ...job,
-    lastRun: null,
-    nextRun: null,
-    runTimes: null,
-  }));
-
-  res.status(200).send(j<Job[]>);
+router.get("/", async (req, res, next) => {
+  try {
+    // check cache
+    // if not in cache, check db
+    const jobs = (await db.findAll()).map((j) => removeFields(j));
+    if (jobs.length === 0) {
+      res.status(404).send({ error: true, message: "No jobs found" });
+    }
+    res.status(200).send(jobs);
+  } catch (error) {
+    console.log(error);
+    res
+      .status(500)
+      .send({ error: true, message: `Internal server error: ${error}` });
+  }
 });
 
-router.post("/jobs", async (req, res, next) => {
-  const job = <Job>req.body;
-  const [result, valid] = validateJob(
-    job,
-    req.body.startDate,
-    req.body.endDate
-  );
-  if (!valid) {
-    res.status(400).send(result);
+router.post("/", async (req, res, next) => {
+  try {
+    const job = <Job>req.body;
+    const [result, valid] = validateJob(
+      job,
+      req.body.startDate,
+      req.body.endDate
+    );
+    if (!valid) {
+      res.status(400).send(result);
+    }
+    // check cache
+    // if not in cache, write to db then cache
+    const resultJob = db.findOne({ ...job });
+    if (!result) {
+      res
+        .status(400)
+        .send({ error: true, message: "Matching job eventName found" });
+    }
+    res.status(201).send(resultJob);
+  } catch (error) {
+    console.log(error);
+    res
+      .status(500)
+      .send({ error: true, message: `Internal server error: ${error}` });
   }
-  // check cache
-  // if not in cache, write to db then cache
-  let [j, ok] = find(job.id);
-  if (!ok) {
-    res.status(404).send("Job not found");
-  }
-  res.status(201).send(j);
 });
 
-router.put("/jobs/:id", async (req, res, next) => {
-  const id = req.params.id;
-  const job = <Job>req.body;
-  const [result, valid] = validateJob(
-    job,
-    req.body.startDate,
-    req.body.endDate
-  );
-  if (!valid) {
-    res.status(400).send(result);
+router.put("/:id", async (req, res, next) => {
+  try {
+    const id = req.params.id;
+    const job = <Job>req.body;
+    const [result, valid] = validateJob(
+      job,
+      req.body.startDate,
+      req.body.endDate
+    );
+    if (!valid) {
+      res.status(400).send({ error: true, message: result });
+    }
+    // check cache
+    // if not in cache, check db
+    // update db
+    const ok = db.update({ id, eventName: "" }, { ...job });
+    if (!ok) {
+      res.status(400).send({ error: true, message: "Job not found" });
+    }
+    res.status(204).send(job);
+  } catch (error) {
+    console.log(error);
+    res
+      .status(500)
+      .send({ error: true, message: `Internal server error: ${error}` });
   }
-  // check cache
-  // if not in cache, check db
-  let [_, ok] = find(job.id);
-  if (!ok) {
-    res.status(404).send("Job not found");
-  }
-  // update db
-  const [err, status] = update(job);
-  if (!status) {
-    console.log(err);
-    res.status(500).send("Internal server error");
-  }
-  res.status(204).send("Job updated");
 });
 
-router.delete("/jobs:id", async (req, res, next) => {
-  const id = req.params.id;
-  // check cache
-  // if not in cache, check db
-  const [_, ok] = find(id);
-  if (!ok) {
-    res.status(404).send("Job not found");
+router.delete("/:id", async (req, res, next) => {
+  try {
+    const id = req.params.id;
+    // check cache
+    // if not in cache, check db
+    // if in db proceed to process job data
+    const ok = db.remove({ id, eventName: "" });
+    if (!ok) {
+      res.status(400).send({ error: true, message: "Job not found" });
+    }
+    res.status(204).send("Job deleted");
+  } catch (error) {
+    console.log(error);
+    res
+      .status(500)
+      .send({ error: true, message: `Internal server error: ${error}` });
   }
-  // if in db proceed to process job data
-  const [err, status] = remove(id);
-  if (!status) {
-    console.log(err);
-    res.status(500).send(`Internal server error: ${err}`);
-  }
-  res.status(204).send("Job deleted");
 });
 
 export default router;

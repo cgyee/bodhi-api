@@ -1,4 +1,4 @@
-import { Job } from "./db";
+import { type Job } from "./db.ts";
 
 const dataParser = (dateStr: string): Date | null => {
   let date: Date;
@@ -35,8 +35,6 @@ const validateJob = (
   if (start == null || end == null) {
     return ["Invalid date format", false];
   }
-  job.startDate = start;
-  job.endDate = end;
   const [missedProps, missing] = missingFields(job);
   if (missing) {
     return [missedProps, false];
@@ -44,4 +42,9 @@ const validateJob = (
   return ["", true];
 };
 
-export { missingFields, validateJob };
+const removeFields = (job: Job): Job => {
+  const { lastRun, nextRun, runTimes, ...rest } = job;
+  return rest;
+};
+
+export { missingFields, validateJob, removeFields };
